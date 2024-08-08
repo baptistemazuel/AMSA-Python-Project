@@ -1,0 +1,183 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import yfinance as yf
+import tkinter as tk
+from tkinter import ttk, messagebox
+import datetime
+
+def fetch_data(symbol, start_date, end_date):
+    try:
+        data = yf.download(symbol, start=start_date, end=end_date)
+        if data.empty:
+            raise ValueError("No data found, please check the symbol and date range.")
+        return data
+    except Exception as e:
+        messagebox.showerror("Fetching Error", str(e))
+        return None
+
+def add_bollinger_bands(data):
+    data['Middle Band'] = data['Close'].rolling(window=20).mean()
+    data['Upper Band'] = data['Middle Band'] + 2 * data['Close'].rolling(window=20).std()
+    data['Lower Band'] = data['Middle Band'] - 2 * data['Close'].rolling(window=20).std()
+
+def add_stochastic_oscillator(data):
+    low_min = data['Low'].rolling(window=14).min()
+    high_max = data['High'].rolling(window=14).max()
+    data['Stochastic'] = 100 * (data['Close'] - low_min) / (high_max - low_min)
+
+def plot_indicators(data, symbol, option):
+    if option == "Bollinger Bands":
+        plt.figure(figsize=(10, 6))
+        plt.plot(data.index, data['Close'], label='Close Price', color='blue')
+        plt.fill_between(data.index, data['Upper Band'], data['Lower Band'], color='gray', alpha=0.3, label='Bollinger Bands')
+        plt.title(f"Bollinger Bands for {symbol}")
+    elif option == "Stochastic Oscillator":
+        plt.figure(figsize=(10, 6))
+        plt.plot(data.index, data['Stochastic'], label='Stochastic Oscillator', color='purple')
+        plt.axhline(80, linestyle='--', alpha=0.5, color='red', label='Overbought')
+        plt.axhline(20, linestyle='--', alpha=0.5, color='green', label='Oversold')
+        plt.title(f"Stochastic Oscillator for {symbol}")
+
+    plt.xlabel('Date')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def plot_moving_average(data, symbol):
+    data['MA'] = data['Close'].rolling(window=20).mean()
+    plt.figure(figsize=(10, 6))
+    plt.plot(data.index, data['Close'], label='Close Price', color='blue')
+    plt.plot(data.index, data['MA'], label='20 Day Moving Average', color='orange')
+    plt.title(f"Moving Average for {symbol}")
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.legend()
+    plt.show()
+
+def plot_macd(data, symbol):
+    exp1 = data['Close'].ewm(span=12, adjust=False).mean()
+    exp2 = data['Close'].ewm(span=26, adjust=False).mean()
+    macd = exp1 - exp2
+    signal = macd.ewm(span=9, adjust=False).mean()
+    plt.figure(figsize=(10, 6))
+    plt.plot(data.index, macd, label='MACD', color='blue')
+    plt.plot(data.index, signal, label='Signal Line', color='red')
+    plt.title(f"MACD for {symbol}")
+    plt.xlabel('Date')
+    plt.ylabel('MACD')
+    plt.legend()
+    plt.show()
+
+def plot_rsi(data, symbol):
+    delta = data['Close'].diff(1)
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=14, min_periods=1).mean()
+    avg_loss = loss.rolling(window=14, min_periods=1).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    plt.figure(figsize=(10, 6))
+    plt.plot(data.index, rsi, label='RSI', color='purple')
+    plt.title(f"RSI for {symbol}")
+    plt.xlabel('Date')
+    plt.ylabel('RSI Value')
+    plt.axhline(70, color='red', linestyle='--', label='Overbought')
+    plt.axhline(30, color='green', linestyle='--', label='Oversold')
+    plt.legend()
+    plt.show()
+
+def plot_scatter(data, symbol):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(data.index, data['Close'], color='blue', label='Close Price')
+    predicted = data['Close'].rolling(window=5).mean()
+    plt.plot(data.index, predicted, color='red', label='Predicted Line')
+    plt.title(f"Scatter Plot for {symbol}")
+    plt.xlabel('Date')
+    plt.ylabel('Close Price')
+    plt.legend()
+    plt.show()
+
+def fetch_company_info(symbol):
+  try:
+      ticker = yf.Ticker(symbol)
+      info = ticker.info
+      selected_info = {
+          'currentPrice': info.get('currentPrice'),
+          'peRatio': info.get('trailingPE'),
+          'marketCap': info.get('marketCap'),
+          'dayRange': info.get('regularMarketDayRange'),
+          'fiftyTwoWeekRange': info.get('fiftyTwoWeekRange'),
+          'eps': info.get('trailingEps')
+      }
+      return selected_info
+  except Exception as e:
+      messagebox.showerror("Company Info Error", str(e))
+      return None
+
+def display_company_info(symbol):
+  info = fetch_company_info(symbol)
+  if info:
+      info_window = tk.Toplevel()
+      info_window.title("Company Information")
+      tree = ttk.Treeview(info_window, columns=('Metric', 'Value'), show='headings')
+      tree.heading('Metric', text='Metric')
+      tree.heading('Value', text='Value')
+      for metric, value in info.items():
+          tree.insert('', tk.END, values=(metric, value))
+      tree.pack(expand=True, fill='both')
+
+def handle_plot(symbol, start_date, end_date, option):
+  data = fetch_data(symbol, start_date, end_date)
+  if data is None:
+      return
+
+  if option == "Moving Average":
+      plot_moving_average(data, symbol)
+  elif option == "MACD":
+      plot_macd(data, symbol)
+  elif option == "RSI":
+      plot_rsi(data, symbol)
+  elif option == "Scatter Plot":
+      plot_scatter(data, symbol)
+  elif option == "Bollinger Bands":
+      add_bollinger_bands(data)
+      plot_indicators(data, symbol, option)
+  elif option == "Stochastic Oscillator":
+      add_stochastic_oscillator(data)
+      plot_indicators(data, symbol, option)
+
+def setup_gui():
+  root = tk.Tk()
+  root.title("Stock Analysis Tool Enhanced")
+
+  tk.Label(root, text="Enter Symbol:").pack()
+  symbol_entry = tk.Entry(root)
+  symbol_entry.pack()
+
+  tk.Label(root, text="Start Date (YYYY-MM-DD):").pack()
+  start_date_entry = tk.Entry(root)
+  start_date_entry.pack()
+
+  tk.Label(root, text="End Date (YYYY-MM-DD):").pack()
+  end_date_entry = tk.Entry(root)
+  end_date_entry.pack()
+
+  options = ["Moving Average", "MACD", "RSI", "Scatter Plot", "Bollinger Bands", "Stochastic Oscillator"]
+  selected_option = tk.StringVar(value=options[0])
+  tk.OptionMenu(root, selected_option, *options).pack()
+
+  plot_button = tk.Button(root, text="Plot", command=lambda: handle_plot(symbol_entry.get(), start_date_entry.get(), end_date_entry.get(), selected_option.get()))
+  plot_button.pack()
+
+  info_button = tk.Button(root, text="Show Company Info", command=lambda: display_company_info(symbol_entry.get()))
+  info_button.pack()
+
+  root.mainloop()
+
+def main():
+  setup_gui()
+
+if __name__ == "__main__":
+  main()
