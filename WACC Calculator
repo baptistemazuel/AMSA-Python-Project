@@ -1,0 +1,298 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import ttk
+
+# Set pandas display option to show all rows
+pd.set_option('display.max_rows', None)
+
+# Function to calculate Re
+def calculate_re(beta, rf, rm):
+    return rf + beta * (rm - rf)
+
+# Function to calculate WACC
+def calculate_wacc(re, rd, equity_size, debt_size, tax_rate):
+    total_size = equity_size + debt_size
+    wacc = (equity_size / total_size) * re + (debt_size / total_size) * rd * (1 - tax_rate)
+    return wacc, (equity_size / total_size), (debt_size / total_size)
+
+# Function to show company and ETF names
+def show_company_and_etf_name():
+    stock_ticker = stock_entry.get()
+    etf_ticker = etf_entry.get()
+
+    try:
+        stock_info = yf.Ticker(stock_ticker).info
+        etf_info = yf.Ticker(etf_ticker).info
+
+        company_name = stock_info.get('longName', 'Company name not available')
+        etf_name = etf_info.get('longName', 'ETF name not available')
+
+        company_etf_info = (
+            f"Company Name for {stock_ticker}: {company_name}\n"
+            f"ETF Name for {etf_ticker}: {etf_name}"
+        )
+
+        messagebox.showinfo("Company and ETF Name", company_etf_info)
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to retrieve company or ETF name: {e}")
+
+# Main function to calculate WACC and Re
+def calculate_wacc_and_re():
+    stock_ticker = stock_entry.get()
+    etf_ticker = etf_entry.get()
+    start_date = start_date_entry.get()
+    end_date = end_date_entry.get()
+
+    try:
+        rd = float(rd_entry.get())
+        equity_size = float(equity_entry.get())
+        debt_size = float(debt_entry.get())
+        tax_rate = float(tax_entry.get())
+        rf = float(rf_entry.get())
+    except ValueError:
+        messagebox.showerror("Input Error", "Please enter valid numerical values for Rd, Equity Size, Debt Size, Tax Rate, and Rf.")
+        return
+
+    # Fetch stock and ETF data
+    stock_data = yf.download(stock_ticker, start=start_date, end=end_date)
+    etf_data = yf.download(etf_ticker, start=start_date, end=end_date)
+
+    if stock_data.empty or etf_data.empty:
+        messagebox.showerror("Data Error", "Failed to retrieve stock or ETF data. Please check the ticker symbols and dates.")
+        return
+
+    # Merge the stock and ETF data on the date index to ensure both have data for the same dates
+    combined_data = pd.merge(stock_data['Adj Close'], etf_data['Adj Close'], left_index=True, right_index=True, how='inner', suffixes=(f'_{stock_ticker}', f'_{etf_ticker}'))
+
+    # Ensure the columns are named correctly
+    combined_data.columns = [f'{stock_ticker} Adj Close', f'{etf_ticker} Adj Close']
+
+    # Calculate returns, rounded to 3 decimal places
+    combined_data[f'{stock_ticker} Returns'] = combined_data[f'{stock_ticker} Adj Close'].pct_change().round(3)
+    combined_data[f'{etf_ticker} Returns'] = combined_data[f'{etf_ticker} Adj Close'].pct_change().round(3)
+
+    # Drop rows where either stock or ETF returns are missing
+    combined_data.dropna(subset=[f'{stock_ticker} Returns', f'{etf_ticker} Returns'], inplace=True)
+
+    # Calculate beta
+    covariance = combined_data[f'{stock_ticker} Returns'].cov(combined_data[f'{etf_ticker} Returns'])
+    variance_etf = combined_data[f'{etf_ticker} Returns'].var()
+    beta_equity = covariance / variance_etf
+
+    # Calculate annualized market return
+    n = len(combined_data)
+    daily_returns = combined_data[f'{etf_ticker} Returns'] + 1
+    cumulative_return = daily_returns.prod()
+    market_annual_return = cumulative_return ** (252 / n) - 1
+
+    # Calculate Re
+    re = calculate_re(beta_equity, rf, market_annual_return)
+
+    # Calculate WACC
+    wacc, equity_weight, debt_weight = calculate_wacc(re, rd, equity_size, debt_size, tax_rate)
+
+    # Show WACC calculation steps and result
+    wacc_details = (
+        f"Calculation Steps for WACC:\n\n"
+        f"Equity Weight (E/V): {equity_weight:.4f}\n"
+        f"Debt Weight (D/V): {debt_weight:.4f}\n"
+        f"Cost of Equity (Re): {re:.4f}\n"
+        f"Cost of Debt (Rd): {rd:.4f}\n"
+        f"Tax Rate: {tax_rate:.4f}\n\n"
+        f"WACC = (E/V) * Re + (D/V) * Rd * (1 - Tax Rate)\n"
+        f"WACC = ({equity_weight:.4f}) * {re:.4f} + ({debt_weight:.4f}) * {rd:.4f} * (1 - {tax_rate:.4f})\n"
+        f"WACC = {wacc:.4f}"
+    )
+
+    messagebox.showinfo("WACC Result", wacc_details)
+
+# Show Re details
+def show_re_details():
+    stock_ticker = stock_entry.get()
+    etf_ticker = etf_entry.get()
+    start_date = start_date_entry.get()
+    end_date = end_date_entry.get()
+
+    try:
+        rf = float(rf_entry.get())
+    except ValueError:
+        messagebox.showerror("Input Error", "Please enter a valid numerical value for Rf.")
+        return
+
+    # Fetch stock and ETF data
+    stock_data = yf.download(stock_ticker, start=start_date, end=end_date)
+    etf_data = yf.download(etf_ticker, start=start_date, end=end_date)
+
+    if stock_data.empty or etf_data.empty:
+        messagebox.showerror("Data Error", "Failed to retrieve stock or ETF data. Please check the ticker symbols and dates.")
+        return
+
+    # Merge the stock and ETF data on the date index to ensure both have data for the same dates
+    combined_data = pd.merge(stock_data['Adj Close'], etf_data['Adj Close'], left_index=True, right_index=True, how='inner', suffixes=(f'_{stock_ticker}', f'_{etf_ticker}'))
+
+    # Ensure the columns are named correctly
+    combined_data.columns = [f'{stock_ticker} Adj Close', f'{etf_ticker} Adj Close']
+
+    # Calculate returns, rounded to 3 decimal places
+    combined_data[f'{stock_ticker} Returns'] = combined_data[f'{stock_ticker} Adj Close'].pct_change().round(3)
+    combined_data[f'{etf_ticker} Returns'] = combined_data[f'{etf_ticker} Adj Close'].pct_change().round(3)
+
+    # Drop rows where either stock or ETF returns are missing
+    combined_data.dropna(subset=[f'{stock_ticker} Returns', f'{etf_ticker} Returns'], inplace=True)
+
+    # Calculate beta
+    covariance = combined_data[f'{stock_ticker} Returns'].cov(combined_data[f'{etf_ticker} Returns'])
+    variance_etf = combined_data[f'{etf_ticker} Returns'].var()
+    beta_equity = covariance / variance_etf
+
+    # Calculate annualized market return
+    n = len(combined_data)
+    daily_returns = combined_data[f'{etf_ticker} Returns'] + 1
+    cumulative_return = daily_returns.prod()
+    market_annual_return = cumulative_return ** (252 / n) - 1
+
+    # Calculate Re
+    re = calculate_re(beta_equity, rf, market_annual_return)
+
+    # Show calculation steps for Re
+    re_details = (
+        f"Calculation Steps for Re (Cost of Equity):\n\n"
+        f"Risk-Free Rate (Rf): {rf:.4f}\n"
+        f"Market Return (Rm): {market_annual_return:.4f}\n"
+        f"Levered Beta (β): {beta_equity:.4f}\n\n"
+        f"Re = Rf + β * (Rm - Rf)\n"
+        f"Re = {rf:.4f} + {beta_equity:.4f} * ({market_annual_return:.4f} - {rf:.4f})\n"
+        f"Re = {re:.4f}"
+    )
+
+    messagebox.showinfo("Re Details", re_details)
+
+# Show Rd details
+def show_rd_details():
+    try:
+        rd = float(rd_entry.get())
+    except ValueError:
+        messagebox.showerror("Input Error", "Please enter a valid numerical value for Rd.")
+        return
+
+    messagebox.showinfo("Rd Details", f"Cost of Debt (Rd) provided by user is: {rd:.4f}")
+
+# Show historical prices and returns
+# Show historical prices and returns
+def show_historical_data():
+    stock_ticker = stock_entry.get()
+    etf_ticker = etf_entry.get()
+    start_date = start_date_entry.get()
+    end_date = end_date_entry.get()
+
+    # Fetch stock and ETF data
+    stock_data = yf.download(stock_ticker, start=start_date, end=end_date)
+    etf_data = yf.download(etf_ticker, start=start_date, end=end_date)
+
+    if stock_data.empty or etf_data.empty:
+        messagebox.showerror("Data Error", "Failed to retrieve stock or ETF data. Please check the ticker symbols and dates.")
+        return
+
+    # Merge the stock and ETF data on the date index to ensure both have data for the same dates
+    combined_data = pd.merge(stock_data['Adj Close'], etf_data['Adj Close'], left_index=True, right_index=True, how='inner', suffixes=(f'_{stock_ticker}', f'_{etf_ticker}'))
+
+    # Ensure the columns are named correctly
+    combined_data.columns = [f'{stock_ticker} Adj Close', f'{etf_ticker} Adj Close']
+
+    # Calculate returns, rounded to 3 decimal places
+    combined_data[f'{stock_ticker} Returns'] = combined_data[f'{stock_ticker} Adj Close'].pct_change().round(3)
+    combined_data[f'{etf_ticker} Returns'] = combined_data[f'{etf_ticker} Adj Close'].pct_change().round(3)
+
+    # Drop rows where either stock or ETF returns are missing
+    combined_data.dropna(subset=[f'{stock_ticker} Returns', f'{etf_ticker} Returns'], inplace=True)
+
+    # Add back the date as a column (reset the index)
+    combined_data.reset_index(inplace=True)
+
+    # Now the columns will be ['Date', 'Stock Adj Close', 'ETF Adj Close', 'Stock Returns', 'ETF Returns']
+    combined_data.columns = ['Date', f'{stock_ticker} Adj Close', f'{etf_ticker} Adj Close', f'{stock_ticker} Returns', f'{etf_ticker} Returns']
+
+    # Display the data in a new window
+    hist_window = tk.Toplevel(root)
+    hist_window.title("Historical Prices and Returns")
+
+    # Create a Treeview to display the DataFrame
+    tree = ttk.Treeview(hist_window, columns=list(combined_data.columns), show='headings')
+    tree.pack(fill=tk.BOTH, expand=True)
+
+    # Define columns with proper headings
+    for col in combined_data.columns:
+        tree.heading(col, text=col)
+
+    # Add rows to Treeview
+    for index, row in combined_data.iterrows():
+        tree.insert("", tk.END, values=list(row))
+
+    # Adding scrollbar to the Treeview
+    scrollbar = ttk.Scrollbar(hist_window, orient=tk.VERTICAL, command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+# Create a styled GUI using Tkinter
+root = tk.Tk()
+root.title("WACC Calculator")
+root.geometry("500x500")
+
+# Font styling: Times New Roman
+font_style = ("Times New Roman", 12)
+
+# Styling for entries and buttons
+style = ttk.Style()
+style.configure("TLabel", font=font_style)
+style.configure("TButton", font=font_style, padding=6)
+style.configure("TEntry", font=font_style)
+
+# Labels and inputs
+ttk.Label(root, text="Stock Ticker:").grid(row=0, column=0, sticky="e", padx=10, pady=10)
+stock_entry = ttk.Entry(root)
+stock_entry.grid(row=0, column=1, pady=10)
+
+ttk.Label(root, text="ETF Ticker:").grid(row=1, column=0, sticky="e", padx=10)
+etf_entry = ttk.Entry(root)
+etf_entry.grid(row=1, column=1)
+
+ttk.Label(root, text="Start Date (YYYY-MM-DD):").grid(row=2, column=0, sticky="e", padx=10, pady=10)
+start_date_entry = ttk.Entry(root)
+start_date_entry.grid(row=2, column=1, pady=10)
+
+ttk.Label(root, text="End Date (YYYY-MM-DD):").grid(row=3, column=0, sticky="e", padx=10)
+end_date_entry = ttk.Entry(root)
+end_date_entry.grid(row=3, column=1)
+
+ttk.Label(root, text="Risk-Free Rate (Rf):").grid(row=4, column=0, sticky="e", padx=10, pady=10)
+rf_entry = ttk.Entry(root)
+rf_entry.grid(row=4, column=1, pady=10)
+
+ttk.Label(root, text="Cost of Debt (Rd):").grid(row=5, column=0, sticky="e", padx=10)
+rd_entry = ttk.Entry(root)
+rd_entry.grid(row=5, column=1)
+
+ttk.Label(root, text="Equity Size:").grid(row=6, column=0, sticky="e", padx=10, pady=10)
+equity_entry = ttk.Entry(root)
+equity_entry.grid(row=6, column=1, pady=10)
+
+ttk.Label(root, text="Debt Size:").grid(row=7, column=0, sticky="e", padx=10)
+debt_entry = ttk.Entry(root)
+debt_entry.grid(row=7, column=1)
+
+ttk.Label(root, text="Tax Rate:").grid(row=8, column=0, sticky="e", padx=10, pady=10)
+tax_entry = ttk.Entry(root)
+tax_entry.grid(row=8, column=1, pady=10)
+
+# Buttons
+ttk.Button(root, text="Calculate WACC", command=calculate_wacc_and_re).grid(row=9, column=0, columnspan=2, pady=10)
+ttk.Button(root, text="Show Re Details", command=show_re_details).grid(row=10, column=0, columnspan=2, pady=10)
+ttk.Button(root, text="Show Rd Details", command=show_rd_details).grid(row=11, column=0, columnspan=2, pady=10)
+ttk.Button(root, text="Show Historical Prices & Returns", command=show_historical_data).grid(row=12, column=0, columnspan=2, pady=10)
+ttk.Button(root, text="Show Company and ETF Name", command=show_company_and_etf_name).grid(row=13, column=0, columnspan=2, pady=10)
+
+root.mainloop()
